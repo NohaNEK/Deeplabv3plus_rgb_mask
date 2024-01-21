@@ -20,7 +20,7 @@ class ExtRandomHorizontalFlip(object):
     def __init__(self, p=0.5):
         self.p = p
 
-    def __call__(self, img, lbl):
+    def __call__(self, img, lbl,rgb):
         """
         Args:
             img (PIL Image): Image to be flipped.
@@ -28,8 +28,8 @@ class ExtRandomHorizontalFlip(object):
             PIL Image: Randomly flipped image.
         """
         if random.random() < self.p:
-            return F.hflip(img), F.hflip(lbl)
-        return img, lbl
+            return F.hflip(img), F.hflip(lbl),F.hflip(rgb)
+        return img, lbl,rgb
 
     def __repr__(self):
         return self.__class__.__name__ + '(p={})'.format(self.p)
@@ -50,10 +50,11 @@ class ExtCompose(object):
     def __init__(self, transforms):
         self.transforms = transforms
 
-    def __call__(self, img, lbl):
+    def __call__(self, img, lbl,rgb):
         for t in self.transforms:
-            img, lbl = t(img, lbl)
-        return img, lbl
+      
+            img, lbl,rgb = t(img, lbl,rgb)
+        return img, lbl,rgb
 
     def __repr__(self):
         format_string = self.__class__.__name__ + '('
@@ -78,14 +79,14 @@ class ExtCenterCrop(object):
         else:
             self.size = size
 
-    def __call__(self, img, lbl):
+    def __call__(self, img, lbl,rgb):
         """
         Args:
             img (PIL Image): Image to be cropped.
         Returns:
             PIL Image: Cropped image.
         """
-        return F.center_crop(img, self.size), F.center_crop(lbl, self.size)
+        return F.center_crop(img, self.size), F.center_crop(lbl, self.size),F.center_crop(rgb, self.size)
 
     def __repr__(self):
         return self.__class__.__name__ + '(size={0})'.format(self.size)
@@ -218,7 +219,7 @@ class ExtRandomHorizontalFlip(object):
     def __init__(self, p=0.5):
         self.p = p
 
-    def __call__(self, img, lbl):
+    def __call__(self, img, lbl,rgb):
         """
         Args:
             img (PIL Image): Image to be flipped.
@@ -226,8 +227,9 @@ class ExtRandomHorizontalFlip(object):
             PIL Image: Randomly flipped image.
         """
         if random.random() < self.p:
-            return F.hflip(img), F.hflip(lbl)
-        return img, lbl
+       
+            return F.hflip(img), F.hflip(lbl), F.hflip(rgb)
+        return img, lbl, rgb
 
     def __repr__(self):
         return self.__class__.__name__ + '(p={})'.format(self.p)
@@ -278,7 +280,7 @@ class ExtToTensor(object):
     def __init__(self, normalize=True, target_type='uint8'):
         self.normalize = normalize
         self.target_type = target_type
-    def __call__(self, pic, lbl):
+    def __call__(self, pic, lbl,rgb):
         """
         Note that labels will not be normalized to [0, 1].
         Args:
@@ -288,9 +290,10 @@ class ExtToTensor(object):
             Tensor: Converted image and label
         """
         if self.normalize:
-            return F.to_tensor(pic), torch.from_numpy( np.array( lbl, dtype=self.target_type) )
+            return F.to_tensor(pic), torch.from_numpy( np.array( lbl, dtype=self.target_type) ), F.to_tensor(rgb)
         else:
-            return torch.from_numpy( np.array( pic, dtype=np.float32).transpose(2, 0, 1) ), torch.from_numpy( np.array( lbl, dtype=self.target_type) )
+            return torch.from_numpy( np.array( pic, dtype=np.float32).transpose(2, 0, 1) ), torch.from_numpy( np.array( lbl, dtype=self.target_type) 
+                                                                                                             ,np.array( rgb, dtype=np.float32).transpose(2, 0, 1) )
 
     def __repr__(self):
         return self.__class__.__name__ + '()'
@@ -309,7 +312,7 @@ class ExtNormalize(object):
         self.mean = mean
         self.std = std
 
-    def __call__(self, tensor, lbl):
+    def __call__(self, tensor, lbl,rgb):
         """
         Args:
             tensor (Tensor): Tensor image of size (C, H, W) to be normalized.
@@ -318,7 +321,7 @@ class ExtNormalize(object):
             Tensor: Normalized Tensor image.
             Tensor: Unchanged Tensor label
         """
-        return F.normalize(tensor, self.mean, self.std), lbl
+        return F.normalize(tensor, self.mean, self.std), lbl,F.normalize(rgb, self.mean, self.std)
 
     def __repr__(self):
         return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)
@@ -364,7 +367,7 @@ class ExtRandomCrop(object):
         j = random.randint(0, w - tw)
         return i, j, th, tw
 
-    def __call__(self, img, lbl):
+    def __call__(self, img, lbl,rgb):
         """
         Args:
             img (PIL Image): Image to be cropped.
@@ -373,24 +376,30 @@ class ExtRandomCrop(object):
             PIL Image: Cropped image.
             PIL Image: Cropped label.
         """
-        assert img.size == lbl.size, 'size of img and lbl should be the same. %s, %s'%(img.size, lbl.size)
+
+        assert img.size == lbl.size == rgb.size, 'size of img and lbl should be the same. %s, %s'%(img.size, lbl.size)
         if self.padding > 0:
             img = F.pad(img, self.padding)
+            rgb = F.pad(rgb, self.padding)
+
             lbl = F.pad(lbl, self.padding)
 
         # pad the width if needed
         if self.pad_if_needed and img.size[0] < self.size[1]:
             img = F.pad(img, padding=int((1 + self.size[1] - img.size[0]) / 2))
+            rgb = F.pad(rgb, padding=int((1 + self.size[1] - img.size[0]) / 2))
+
             lbl = F.pad(lbl, padding=int((1 + self.size[1] - lbl.size[0]) / 2))
 
         # pad the height if needed
         if self.pad_if_needed and img.size[1] < self.size[0]:
             img = F.pad(img, padding=int((1 + self.size[0] - img.size[1]) / 2))
+            rgb = F.pad(rgb, padding=int((1 + self.size[0] - img.size[1]) / 2))
             lbl = F.pad(lbl, padding=int((1 + self.size[0] - lbl.size[1]) / 2))
 
         i, j, h, w = self.get_params(img, self.size)
 
-        return F.crop(img, i, j, h, w), F.crop(lbl, i, j, h, w)
+        return F.crop(img, i, j, h, w), F.crop(lbl, i, j, h, w),F.crop(rgb, i, j, h, w)
 
     def __repr__(self):
         return self.__class__.__name__ + '(size={0}, padding={1})'.format(self.size, self.padding)
@@ -413,14 +422,16 @@ class ExtResize(object):
         self.size = size
         self.interpolation = interpolation
 
-    def __call__(self, img, lbl):
+    def __call__(self, img, lbl,rgb):
         """
         Args:
             img (PIL Image): Image to be scaled.
         Returns:
             PIL Image: Rescaled image.
         """
-        return F.resize(img, self.size, self.interpolation), F.resize(lbl, self.size, Image.NEAREST)
+        # print('im',img.size)
+        # print(lbl.size)
+        return F.resize(img, self.size, self.interpolation), F.resize(lbl, self.size, Image.NEAREST), F.resize(rgb, self.size, self.interpolation)
 
     def __repr__(self):
         interpolate_str = _pil_interpolation_to_str[self.interpolation]
@@ -499,7 +510,7 @@ class ExtColorJitter(object):
 
         return transform
 
-    def __call__(self, img, lbl):
+    def __call__(self, img, lbl,rgb):
         """
         Args:
             img (PIL Image): Input image.
@@ -508,7 +519,7 @@ class ExtColorJitter(object):
         """
         transform = self.get_params(self.brightness, self.contrast,
                                     self.saturation, self.hue)
-        return transform(img), lbl
+        return transform(img), lbl,rgb
 
     def __repr__(self):
         format_string = self.__class__.__name__ + '('

@@ -7,7 +7,7 @@ import argparse
 import numpy as np
 
 from torch.utils import data
-from datasets import VOCSegmentation, Cityscapes
+from datasets import VOCSegmentation, Cityscapes, GTA, GTAV
 from utils import ext_transforms as et
 from metrics import StreamSegMetrics
 
@@ -18,13 +18,15 @@ from utils.visualizer import Visualizer
 from PIL import Image
 import matplotlib
 import matplotlib.pyplot as plt
-
+import cv2
+from tensorboardX import SummaryWriter
+import pandas as pd
 
 def get_argparser():
     parser = argparse.ArgumentParser()
 
     # Datset Options
-    parser.add_argument("--data_root", type=str, default='./datasets/data',
+    parser.add_argument("--data_root", type=str, default='/media/fahad/Crucial X8/Mohamed/GTA/',
                         help="path to Dataset")
     parser.add_argument("--dataset", type=str, default='voc',
                         choices=['voc', 'cityscapes'], help='Name of dataset')
@@ -46,7 +48,7 @@ def get_argparser():
     parser.add_argument("--test_only", action='store_true', default=False)
     parser.add_argument("--save_val_results", action='store_true', default=False,
                         help="save segmentation results to \"./results\"")
-    parser.add_argument("--total_itrs", type=int, default=30e3,
+    parser.add_argument("--total_itrs", type=int, default=40e3,
                         help="epoch number (default: 30k)")
     parser.add_argument("--lr", type=float, default=0.01,
                         help="learning rate (default: 0.01)")
@@ -55,11 +57,11 @@ def get_argparser():
     parser.add_argument("--step_size", type=int, default=10000)
     parser.add_argument("--crop_val", action='store_true', default=False,
                         help='crop validation (default: False)')
-    parser.add_argument("--batch_size", type=int, default=16,
+    parser.add_argument("--batch_size", type=int, default=6,
                         help='batch size (default: 16)')
-    parser.add_argument("--val_batch_size", type=int, default=4,
+    parser.add_argument("--val_batch_size", type=int, default=6,
                         help='batch size for validation (default: 4)')
-    parser.add_argument("--crop_size", type=int, default=513)
+    parser.add_argument("--crop_size", type=int, default=768)
 
     parser.add_argument("--ckpt", default=None, type=str,
                         help="restore from checkpoint")
@@ -69,13 +71,13 @@ def get_argparser():
                         choices=['cross_entropy', 'focal_loss'], help="loss type (default: False)")
     parser.add_argument("--gpu_id", type=str, default='0',
                         help="GPU ID")
-    parser.add_argument("--weight_decay", type=float, default=1e-4,
+    parser.add_argument("--weight_decay", type=float, default=5e-4,
                         help='weight decay (default: 1e-4)')
-    parser.add_argument("--random_seed", type=int, default=1,
+    parser.add_argument("--random_seed", type=int, default=10,
                         help="random seed (default: 1)")
     parser.add_argument("--print_interval", type=int, default=10,
                         help="print interval of loss (default: 10)")
-    parser.add_argument("--val_interval", type=int, default=100,
+    parser.add_argument("--val_interval", type=int, default=1000,
                         help="epoch interval for eval (default: 100)")
     parser.add_argument("--download", action='store_true', default=False,
                         help="download datasets")
@@ -130,30 +132,70 @@ def get_dataset(opts):
 
     if opts.dataset == 'cityscapes':
         train_transform = et.ExtCompose([
-            # et.ExtResize( 512 ),
-            et.ExtRandomCrop(size=(opts.crop_size, opts.crop_size)),
+            et.ExtResize(size= (1914,1052) ),
+            et.ExtRandomCrop(size=(768,768)),
             et.ExtColorJitter(brightness=0.5, contrast=0.5, saturation=0.5),
             et.ExtRandomHorizontalFlip(),
             et.ExtToTensor(),
             et.ExtNormalize(mean=[0.485, 0.456, 0.406],
                             std=[0.229, 0.224, 0.225]),
         ])
-
+     
         val_transform = et.ExtCompose([
-            # et.ExtResize( 512 ),
+            et.ExtResize( (768,768)  ),
             et.ExtToTensor(),
             et.ExtNormalize(mean=[0.485, 0.456, 0.406],
                             std=[0.229, 0.224, 0.225]),
         ])
 
-        train_dst = Cityscapes(root=opts.data_root,
-                               split='train', transform=train_transform)
-        val_dst = Cityscapes(root=opts.data_root,
-                             split='val', transform=val_transform)
+        train_dst = GTA(root=opts.data_root,
+                               split='all', transform=train_transform)
+        val_dst = Cityscapes(root='/media/fahad/Crucial X8/datasets/cityscapes/',
+                        split='val', transform=val_transform)
+    
     return train_dst, val_dst
+def add_gta_infos_in_tensorboard(writer,imgs,labels,rgb_lbs,outputs,cur_itrs,denorm,train_loader):
+ 
+        img=imgs[0].detach().cpu().numpy()
+        img=(denorm(img)*255).astype(np.uint8)
+        lbs=labels[0].detach().cpu().numpy()
+        lbs=train_loader.dataset.decode_target(lbs).astype('uint8')
+        pred=outputs.detach().max(1)[1].cpu().numpy()
+        pred = train_loader.dataset.decode_target(pred[0]).astype('uint8')        
+        img_grid =  [img,np.transpose(lbs,(2,0,1)),np.transpose(pred,(2,0,1))]
+        writer.add_images('test sample gta 0',img_grid,cur_itrs,dataformats='CHW')
 
 
-def validate(opts, model, loader, device, metrics, ret_samples_ids=None):
+        img=imgs[1].detach().cpu().numpy()
+        img=(denorm(img)*255).astype(np.uint8)
+        lbs=labels[1].detach().cpu().numpy()
+        lbs=train_loader.dataset.decode_target(lbs).astype('uint8')
+        pred=outputs.detach().max(1)[1].cpu().numpy()
+        pred = train_loader.dataset.decode_target(pred[1]).astype('uint8')
+
+        img_grid =  [img,np.transpose(lbs,(2,0,1)),np.transpose(pred,(2,0,1))]
+        writer.add_images('test sample gta 1',img_grid,cur_itrs,dataformats='CHW')
+
+def add_cs_in_tensorboard(writer,imgs,labels,outputs,cur_itrs,denorm,train_loader,i):
+    img=imgs[0].detach().cpu().numpy()
+    img=(denorm(img)*255).astype(np.uint8)
+    lbs=labels[0].detach().cpu().numpy()
+    lbs=train_loader.dataset.decode_target(lbs).astype('uint8')
+    pred=outputs.detach().max(1)[1].cpu().numpy()
+    pred=train_loader.dataset.decode_target(pred[0]).astype('uint8')
+
+
+    res_grid=[img,np.transpose(lbs,(2,0,1)),np.transpose(pred,(2,0,1))]
+    writer.add_images('test sample cityscapes '+str(i),res_grid,cur_itrs,dataformats='CHW')
+def create_colormap(feat):
+    # cmap= plt.get_cmap('viridis')
+    cmap= plt.get_cmap('jet')
+
+    feat_map = cmap(feat)
+
+    feat_map=(feat_map*255).astype(np.uint8)
+    return feat_map
+def validate(opts, model, loader, device, metrics,denorm=None,writer=None, cur_itrs=0,ret_samples_ids=None):
     """Do validation and return specified samples"""
     metrics.reset()
     ret_samples = []
@@ -170,11 +212,13 @@ def validate(opts, model, loader, device, metrics, ret_samples_ids=None):
             images = images.to(device, dtype=torch.float32)
             labels = labels.to(device, dtype=torch.long)
 
-            outputs = model(images)
+            outputs,_,_ = model(images,images)
             preds = outputs.detach().max(dim=1)[1].cpu().numpy()
             targets = labels.cpu().numpy()
 
             metrics.update(targets, preds)
+            if i <4 :
+                add_cs_in_tensorboard(writer,images,labels,outputs,cur_itrs,denorm,loader,i)
             if ret_samples_ids is not None and i in ret_samples_ids:  # get vis samples
                 ret_samples.append(
                     (images[0].detach().cpu().numpy(), targets[0], preds[0]))
@@ -206,8 +250,27 @@ def validate(opts, model, loader, device, metrics, ret_samples_ids=None):
 
         score = metrics.get_results()
     return score, ret_samples
-
-
+def add_feats(writer,feats,name,cur_itrs):
+        
+        # for f in feats:
+            #f1=feats[0]
+            f_b=feats['out'][0].mean(dim=0)
+            f_b= (f_b-f_b.min())/(f_b.max()-f_b.min())         
+            writer.add_image('feat_out_'+name,create_colormap(f_b.detach().cpu().numpy()),cur_itrs,dataformats='HWC')
+            f_b=feats['low_level'][0].mean(dim=0)
+            f_b= (f_b-f_b.min())/(f_b.max()-f_b.min())         
+            writer.add_image('feat_lowl_'+name,create_colormap(f_b.detach().cpu().numpy()),cur_itrs,dataformats='HWC')
+            # f_b=torch.sum(feats[1][0],dim=0)
+            # f_b= (f_b-f_b.min())/(f_b.max()-f_b.min())         
+            # writer.add_image('feat_backbone_l2_'+name,create_colormap(f_b.detach().cpu().numpy()),cur_itrs,dataformats='HWC')
+def writer_add_features(writer, name, tensor_feat, iterations):
+    feat_img = tensor_feat[0].detach().cpu().numpy()
+    # img_grid = self.make_grid(feat_img)
+    feat_img = np.sum(feat_img,axis=0)
+    feat_img = feat_img -np.min(feat_img)
+    img_grid = 255*feat_img/np.max(feat_img)
+    img_grid = cv2.applyColorMap(np.array(img_grid, dtype=np.uint8), cv2.COLORMAP_JET)
+    writer.add_image(name, img_grid, iterations, dataformats='HWC')
 def main():
     opts = get_argparser().parse_args()
     if opts.dataset.lower() == 'voc':
@@ -222,13 +285,14 @@ def main():
         vis.vis_table("Options", vars(opts))
 
     os.environ['CUDA_VISIBLE_DEVICES'] = opts.gpu_id
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device( 'cuda' if torch.cuda.is_available() else'cpu')#
     print("Device: %s" % device)
 
     # Setup random seed
     torch.manual_seed(opts.random_seed)
     np.random.seed(opts.random_seed)
     random.seed(opts.random_seed)
+    writer = SummaryWriter("/media/fahad/Crucial X8/deeplabv3plus/logs/R101_rgb_mask_no_low_loss")
 
     # Setup dataloader
     if opts.dataset == 'voc' and not opts.crop_val:
@@ -266,6 +330,7 @@ def main():
 
     # Set up criterion
     # criterion = utils.get_loss(opts.loss_type)
+    criterion_feat = nn.MSELoss(reduction='mean')
     if opts.loss_type == 'focal_loss':
         criterion = utils.FocalLoss(ignore_index=255, size_average=True)
     elif opts.loss_type == 'cross_entropy':
@@ -305,6 +370,7 @@ def main():
     else:
         print("[!] Retrain")
         model = nn.DataParallel(model)
+       # model = torch.nn.DataParallelCPU(model)
         model.to(device)
 
     # ==========   Train Loop   ==========#
@@ -320,46 +386,101 @@ def main():
         return
 
     interval_loss = 0
+    l_low_feat_np = 0
+    l_out_feat_np = 0
     while True:  # cur_itrs < opts.total_itrs:
         # =====  Train  =====
         model.train()
         cur_epochs += 1
-        for (images, labels) in train_loader:
+        for (images, labels,rgb_labels) in train_loader:
             cur_itrs += 1
 
             images = images.to(device, dtype=torch.float32)
             labels = labels.to(device, dtype=torch.long)
+            rgb_labels = rgb_labels.to(device, dtype = torch.float32)
+            # print(images[0])
+            # print(labels[0])
+            # print(rgb_labels[0])
 
             optimizer.zero_grad()
-            outputs = model(images)
+            outputs,feat_image, feat_rgb = model(images,rgb_labels)
             loss = criterion(outputs, labels)
-            loss.backward()
+            # l_low_feat = criterion_feat(feat_image['low_level'],feat_rgb['low_level'])
+            l_out_feat = criterion_feat(feat_image['res_blks'],feat_rgb['out'])
+
+            total_loss = loss  + l_out_feat
+            total_loss.backward()
             optimizer.step()
 
             np_loss = loss.detach().cpu().numpy()
+            # l_low_feat_np +=l_low_feat.detach().cpu().numpy()
+            l_out_feat_np +=l_out_feat.detach().cpu().numpy()
+
             interval_loss += np_loss
+
             if vis is not None:
                 vis.vis_scalar('Loss', cur_itrs, np_loss)
 
             if (cur_itrs) % 10 == 0:
-                interval_loss = interval_loss / 10
                 print("Epoch %d, Itrs %d/%d, Loss=%f" %
-                      (cur_epochs, cur_itrs, opts.total_itrs, interval_loss))
+                      (cur_epochs, cur_itrs, opts.total_itrs, interval_loss / 10))
+                
+                
+            if (cur_itrs) % 100 == 0: 
+                interval_loss = interval_loss / 100
+                writer.add_scalar('train_image_loss', interval_loss, cur_itrs)
+                l_out_feat_np = l_out_feat_np /100
+                # l_low_feat_np = l_low_feat_np/100
+                # writer.add_scalar('low_feat_loss', l_low_feat_np, cur_itrs)
+                writer.add_scalar('out_feat_loss', l_out_feat_np, cur_itrs)
                 interval_loss = 0.0
+                l_out_feat_np = 0.0
+                l_low_feat_np = 0.0
+                add_gta_infos_in_tensorboard(writer,images,labels,images,outputs,cur_itrs,denorm,train_loader)
+                # add_feats(writer,feat_image,'from_images',cur_itrs)
+                writer_add_features(writer,'feat_lowl_from_images',feat_image['low_level'],cur_itrs)
+                writer_add_features(writer,'feat_out_from_images',feat_image['out'],cur_itrs)
+                writer_add_features(writer,'feat_res_blks_from_images',feat_image['res_blks'],cur_itrs)
 
+                writer_add_features(writer,'feat_lowl_from_mask',feat_rgb['low_level'],cur_itrs)
+                writer_add_features(writer,'feat_out_from_mask',feat_rgb['out'],cur_itrs)
+
+                writer.add_histogram('low_feats',feat_image['low_level'],cur_itrs)
+                writer.add_histogram('out_feats',feat_image['out'],cur_itrs)
+                writer.add_histogram('res_blks_feats',feat_image['res_blks'],cur_itrs)
+
+                
+
+                writer.add_histogram('low_feats_mask',feat_rgb['low_level'],cur_itrs)
+                writer.add_histogram('out_feats_mask',feat_rgb['out'],cur_itrs)
+
+                writer.add_scalar('mean_lowfeat_mask', torch.mean(feat_rgb['low_level'][0][0]).detach().cpu().numpy(), cur_itrs)
+                writer.add_scalar('mean_outfeat_mask', torch.mean(feat_rgb['out'][0][0]).detach().cpu().numpy(), cur_itrs)
+
+                writer.add_scalar('mean_lowfeat', torch.mean(feat_image['low_level'][0][0]).detach().cpu().numpy(), cur_itrs)
+                writer.add_scalar('mean_outfeat', torch.mean(feat_image['out'][0][0]).detach().cpu().numpy(), cur_itrs)
+                writer.add_scalar('mean_res_blks_feat', torch.mean(feat_image['res_blks'][0][0]).detach().cpu().numpy(), cur_itrs)
+                # print('low feat',torch.mean(feat_image[0][0][0]))
+                # df_feat = feat_image[0][0][0].detach().cpu().numpy()
+                # df = pd.DataFrame(df_feat)
+                # df.to_csv(path_feat+'feat_from_image_low_'+str(cur_itrs)+'.csv',index=False)
+                # print('out feat',torch.mean(feat_image[1][0][0]))
+                
             if (cur_itrs) % opts.val_interval == 0:
                 save_ckpt('checkpoints/latest_%s_%s_os%d.pth' %
                           (opts.model, opts.dataset, opts.output_stride))
                 print("validation...")
-                model.eval()
+                # model.eval()
                 val_score, ret_samples = validate(
-                    opts=opts, model=model, loader=val_loader, device=device, metrics=metrics,
+                    opts=opts, model=model, loader=val_loader, device=device, metrics=metrics,denorm=denorm,writer=writer,cur_itrs=cur_itrs,
                     ret_samples_ids=vis_sample_id)
                 print(metrics.to_str(val_score))
                 if val_score['Mean IoU'] > best_score:  # save best model
                     best_score = val_score['Mean IoU']
                     save_ckpt('checkpoints/best_%s_%s_os%d.pth' %
                               (opts.model, opts.dataset, opts.output_stride))
+                writer.add_scalar('mIoU_cs', val_score['Mean IoU'], cur_itrs)
+                writer.add_scalar('overall_acc_cs',val_score['Overall Acc'],cur_itrs)
 
                 if vis is not None:  # visualize validation score and samples
                     vis.vis_scalar("[Val] Overall Acc", cur_itrs, val_score['Overall Acc'])

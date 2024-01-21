@@ -42,6 +42,14 @@ def _segm_resnet(name, backbone_name, num_classes, output_stride, pretrained_bac
         pretrained=pretrained_backbone,
         replace_stride_with_dilation=replace_stride_with_dilation)
     
+    backbone2 = resnet.__dict__[backbone_name](
+        pretrained=pretrained_backbone,
+        replace_stride_with_dilation=replace_stride_with_dilation)
+    
+
+    for p in backbone2.parameters():
+        p.requires_grad = False
+    
     inplanes = 2048
     low_level_planes = 256
 
@@ -51,9 +59,9 @@ def _segm_resnet(name, backbone_name, num_classes, output_stride, pretrained_bac
     elif name=='deeplabv3':
         return_layers = {'layer4': 'out'}
         classifier = DeepLabHead(inplanes , num_classes, aspp_dilate)
-    backbone = IntermediateLayerGetter(backbone, return_layers=return_layers)
+    # backbone = IntermediateLayerGetter(backbone, return_layers=return_layers)
 
-    model = DeepLabV3(backbone, classifier)
+    model = DeepLabV3(backbone,backbone2, classifier)
     return model
 
 

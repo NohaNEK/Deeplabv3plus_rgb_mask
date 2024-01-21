@@ -8,7 +8,7 @@ from PIL import Image
 import numpy as np
 
 
-class Cityscapes(data.Dataset):
+class GTAV(data.Dataset):
     """Cityscapes <http://www.cityscapes-dataset.com/> Dataset.
     
     **Parameters:**
@@ -83,7 +83,7 @@ class Cityscapes(data.Dataset):
         self.images = []
         self.targets = []
 
-        if split not in ['train', 'test', 'val']:
+        if split not in ['train', 'test', 'val','val_mapillary','val_bdd','sub_bdd']:
             raise ValueError('Invalid split for mode! Please use split="train", split="test"'
                              ' or split="val"')
 
@@ -97,9 +97,9 @@ class Cityscapes(data.Dataset):
 
             for file_name in os.listdir(img_dir):
                 self.images.append(os.path.join(img_dir, file_name))
-                target_name = '{}_{}'.format(file_name.split('_leftImg8bit')[0],
-                                             self._get_target_suffix(self.mode, self.target_type))
-                self.targets.append(os.path.join(target_dir, target_name))
+                # target_name = '{}_{}'.format(file_name.split('_leftImg8bit')[0],
+                #                              self._get_target_suffix(self.mode, self.target_type))
+                self.targets.append(os.path.join(target_dir, file_name))
 
     @classmethod
     def encode_target(cls, target):
@@ -122,7 +122,7 @@ class Cityscapes(data.Dataset):
         image = Image.open(self.images[index]).convert('RGB')
         target = Image.open(self.targets[index])
         if self.transform:
-            image, target ,_= self.transform(image, target,image)
+            image, target = self.transform(image, target)
         target = self.encode_target(target)
         return image, target
 
@@ -138,7 +138,7 @@ class Cityscapes(data.Dataset):
         if target_type == 'instance':
             return '{}_instanceIds.png'.format(mode)
         elif target_type == 'semantic':
-            return '{}_labelIds.png'.format(mode)
+            return '{}'.format(mode)
         elif target_type == 'color':
             return '{}_color.png'.format(mode)
         elif target_type == 'polygon':

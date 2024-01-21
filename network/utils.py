@@ -3,19 +3,35 @@ import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
 from collections import OrderedDict
+import torch.autograd as autograd
 
+class GradientReversalLayer(autograd.Function):
+    @staticmethod
+    def forward(ctx,x,lambda_val):
+        ctx.lambda_val = lambda_val
+        return x.view_as(x)
+    
+    @staticmethod
+    def backward(ctx,grad_output):
+        # print(grad_output)
+        # print(ctx)
+        return -ctx.lambda_val*grad_output,None
 class _SimpleSegmentationModel(nn.Module):
-    def __init__(self, backbone, classifier):
+    def __init__(self, backbone, backbone2,classifier):
         super(_SimpleSegmentationModel, self).__init__()
         self.backbone = backbone
+        self.backbone2 = backbone2
         self.classifier = classifier
+        # self.gradient_reversal = GradientReversalLayer.apply 
         
-    def forward(self, x):
+    def forward(self, x,rgb_x):
         input_shape = x.shape[-2:]
         features = self.backbone(x)
+        # features['out'] = self.gradient_reversal(features['out'],1.0)
+        feat_rgb = self.backbone2(rgb_x)
         x = self.classifier(features)
         x = F.interpolate(x, size=input_shape, mode='bilinear', align_corners=False)
-        return x
+        return x,features, feat_rgb
 
 
 class IntermediateLayerGetter(nn.ModuleDict):
