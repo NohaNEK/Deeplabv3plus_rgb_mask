@@ -158,23 +158,17 @@ def add_gta_infos_in_tensorboard(writer,imgs,labels,rgb_lbs,outputs,cur_itrs,den
  
         img=imgs[0].detach().cpu().numpy()
         img=(denorm(img)*255).astype(np.uint8)
+        writer.add_image('gta_image',img,cur_itrs,dataformats='CHW')
+        rgb_lb=rgb_lbs[0].detach().cpu().numpy()
+        rgb_lb=(denorm(rgb_lb)*255).astype(np.uint8)
+        writer.add_image('gta_rgb_mask',rgb_lb,cur_itrs,dataformats='CHW')
+
         lbs=labels[0].detach().cpu().numpy()
         lbs=train_loader.dataset.decode_target(lbs).astype('uint8')
+        writer.add_image('gta_ground_truth',lbs,cur_itrs,dataformats='HWC')
         pred=outputs.detach().max(1)[1].cpu().numpy()
-        pred = train_loader.dataset.decode_target(pred[0]).astype('uint8')        
-        img_grid =  [img,np.transpose(lbs,(2,0,1)),np.transpose(pred,(2,0,1))]
-        writer.add_images('test sample gta 0',img_grid,cur_itrs,dataformats='CHW')
-
-
-        img=imgs[1].detach().cpu().numpy()
-        img=(denorm(img)*255).astype(np.uint8)
-        lbs=labels[1].detach().cpu().numpy()
-        lbs=train_loader.dataset.decode_target(lbs).astype('uint8')
-        pred=outputs.detach().max(1)[1].cpu().numpy()
-        pred = train_loader.dataset.decode_target(pred[1]).astype('uint8')
-
-        img_grid =  [img,np.transpose(lbs,(2,0,1)),np.transpose(pred,(2,0,1))]
-        writer.add_images('test sample gta 1',img_grid,cur_itrs,dataformats='CHW')
+        pred = train_loader.dataset.decode_target(pred[0]).astype('uint8')
+        writer.add_image('gta_pred',pred,cur_itrs,dataformats='HWC')
 
 def add_cs_in_tensorboard(writer,imgs,labels,outputs,cur_itrs,denorm,train_loader,i):
     img=imgs[0].detach().cpu().numpy()
@@ -398,9 +392,7 @@ def main():
             images = images.to(device, dtype=torch.float32)
             labels = labels.to(device, dtype=torch.long)
             rgb_labels = rgb_labels.to(device, dtype = torch.float32)
-            # print(images[0])
-            # print(labels[0])
-            # print(rgb_labels[0])
+           
 
             optimizer.zero_grad()
             outputs,feat_image, feat_rgb = model(images,rgb_labels)
@@ -437,7 +429,7 @@ def main():
                 l_out_feat_np = 0.0
                 l_low_feat_np = 0.0
                 add_gta_infos_in_tensorboard(writer,images,labels,images,outputs,cur_itrs,denorm,train_loader)
-                # add_feats(writer,feat_image,'from_images',cur_itrs)
+              
                 writer_add_features(writer,'feat_lowl_from_images',feat_image['low_level'],cur_itrs)
                 writer_add_features(writer,'feat_out_from_images',feat_image['out'],cur_itrs)
                 writer_add_features(writer,'feat_res_blks_from_images',feat_image['res_blks'],cur_itrs)
@@ -454,17 +446,7 @@ def main():
                 writer.add_histogram('low_feats_mask',feat_rgb['low_level'],cur_itrs)
                 writer.add_histogram('out_feats_mask',feat_rgb['out'],cur_itrs)
 
-                writer.add_scalar('mean_lowfeat_mask', torch.mean(feat_rgb['low_level'][0][0]).detach().cpu().numpy(), cur_itrs)
-                writer.add_scalar('mean_outfeat_mask', torch.mean(feat_rgb['out'][0][0]).detach().cpu().numpy(), cur_itrs)
-
-                writer.add_scalar('mean_lowfeat', torch.mean(feat_image['low_level'][0][0]).detach().cpu().numpy(), cur_itrs)
-                writer.add_scalar('mean_outfeat', torch.mean(feat_image['out'][0][0]).detach().cpu().numpy(), cur_itrs)
-                writer.add_scalar('mean_res_blks_feat', torch.mean(feat_image['res_blks'][0][0]).detach().cpu().numpy(), cur_itrs)
-                # print('low feat',torch.mean(feat_image[0][0][0]))
-                # df_feat = feat_image[0][0][0].detach().cpu().numpy()
-                # df = pd.DataFrame(df_feat)
-                # df.to_csv(path_feat+'feat_from_image_low_'+str(cur_itrs)+'.csv',index=False)
-                # print('out feat',torch.mean(feat_image[1][0][0]))
+                
                 
             if (cur_itrs) % opts.val_interval == 0:
                 save_ckpt('checkpoints/latest_%s_%s_os%d.pth' %
