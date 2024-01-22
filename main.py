@@ -48,7 +48,7 @@ def get_argparser():
     parser.add_argument("--test_only", action='store_true', default=False)
     parser.add_argument("--save_val_results", action='store_true', default=False,
                         help="save segmentation results to \"./results\"")
-    parser.add_argument("--total_itrs", type=int, default=40e3,
+    parser.add_argument("--total_itrs", type=int, default=100e3,
                         help="epoch number (default: 30k)")
     parser.add_argument("--lr", type=float, default=0.01,
                         help="learning rate (default: 0.01)")
@@ -429,6 +429,8 @@ def main():
                 l_out_feat_np = 0.0
                 l_low_feat_np = 0.0
                 add_gta_infos_in_tensorboard(writer,images,labels,images,outputs,cur_itrs,denorm,train_loader)
+                writer.add_scalar('LR_Backbone',scheduler.get_lr()[0],cur_itrs)
+                writer.add_scalar('LR_classifier',scheduler.get_lr()[1],cur_itrs)
               
                 writer_add_features(writer,'feat_lowl_from_images',feat_image['low_level'],cur_itrs)
                 writer_add_features(writer,'feat_out_from_images',feat_image['out'],cur_itrs)
@@ -437,9 +439,9 @@ def main():
                 writer_add_features(writer,'feat_lowl_from_mask',feat_rgb['low_level'],cur_itrs)
                 writer_add_features(writer,'feat_out_from_mask',feat_rgb['out'],cur_itrs)
 
-                writer.add_histogram('low_feats',feat_image['low_level'],cur_itrs)
-                writer.add_histogram('out_feats',feat_image['out'],cur_itrs)
-                writer.add_histogram('res_blks_feats',feat_image['res_blks'],cur_itrs)
+                writer.add_histogram('low_feats_image',feat_image['low_level'],cur_itrs)
+                writer.add_histogram('out_feats_image',feat_image['out'],cur_itrs)
+                writer.add_histogram('res_blks_feats_image',feat_image['res_blks'],cur_itrs)
 
                 
 
